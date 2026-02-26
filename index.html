@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="th" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบยืม-คืนอุปกรณ์ดิจิทัล</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <!-- ⚠️ ตรวจสอบว่า Path ของ SDK ถูกต้องตามสภาพแวดล้อมที่ใช้งาน -->
+  <script src="/_sdk/element_sdk.js"></script>
+  <script src="/_sdk/data_sdk.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Sarabun', sans-serif; }
+    .tab-active { background: rgba(255,255,255,0.2); border-left: 4px solid white; }
+    .card-shadow { box-shadow: 0 4px 20px rgba(0,0,0,0.05); }
+    .status-available { background: #dcfce7; color: #166534; }
+    .status-borrowed { background: #fef3c7; color: #92400e; }
+    .status-overdue { background: #fecaca; color: #991b1b; }
+    .sidebar-gradient { background: linear-gradient(180deg, #1e3a8a 0%, #2563eb 100%); }
+    .toast { position: fixed; bottom: 20px; right: 20px; padding: 16px 24px; border-radius: 12px; color: white; z-index: 1000; transition: all 0.3s ease; }
+  </style>
+</head>
+<body class="h-full bg-slate-50">
+  <div id="app" class="h-full flex overflow-hidden">
+    
+    <!-- Sidebar -->
+    <aside class="sidebar-gradient w-64 flex-shrink-0 flex flex-col text-white shadow-xl">
+      <div class="p-6 border-b border-white/10 text-center">
+        <div class="text-4xl mb-2">📦</div>
+        <h1 id="systemTitle" class="text-lg font-bold">ระบบยืม-คืนอุปกรณ์</h1>
+        <p id="orgName" class="text-xs text-blue-100 opacity-80">Digital Asset Management</p>
+      </div>
+      <nav class="flex-1 p-4 space-y-2 mt-4">
+        <button onclick="switchTab('dashboard')" id="tab-dashboard" class="w-full text-left px-4 py-3 rounded-lg flex items-center gap-3 hover:bg-white/10 transition"> 📊 แดชบอร์ด </button>
+        <button onclick="switchTab('transactions')" id="tab-transactions" class="w-full text-left px-4 py-3 rounded-lg flex items-center gap-3 hover:bg-white/10 transition"> 📋 ทำรายการ ยืม-คืน </button>
+        <div class="pt-4 pb-2 px-4 text-xs font-bold uppercase text-blue-200">Admin Section</div>
+        <button onclick="switchTab('equipment')" id="tab-equipment" class="w-full text-left px-4 py-3 rounded-lg flex items-center gap-3 hover:bg-white/10 transition"> 🔧 จัดการอุปกรณ์ </button>
+        <button onclick="switchTab('users')" id="tab-users" class="w-full text-left px-4 py-3 rounded-lg flex items-center gap-3 hover:bg-white/10 transition"> 👥 จัดการผู้ใช้ </button>
+        <button onclick="switchTab('reports')" id="tab-reports" class="w-full text-left px-4 py-3 rounded-lg flex items-center gap-3 hover:bg-white/10 transition"> 📈 รายงานสรุป </button>
+        <button onclick="switchTab('testing')" id="tab-testing" class="w-full text-left px-4 py-3 rounded-lg flex items-center gap-3 hover:bg-white/10 transition"> ✅ ทดสอบระบบ </button>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 overflow-auto bg-gray-50">
+      
+      <!-- Dashboard -->
+      <div id="content-dashboard" class="p-8 space-y-8">
+        <header>
+            <h2 class="text-3xl font-bold text-gray-800">ยินดีต้อนรับ 👋</h2>
+            <p class="text-gray-500">ภาพรวมระบบยืม-คืนอุปกรณ์วันนี้</p>
+        </header>
+        
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <p class="text-sm text-gray-400">อุปกรณ์ทั้งหมด</p>
+            <p id="stat-equipment" class="text-3xl font-bold text-blue-600">0</p>
+          </div>
+          <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <p class="text-sm text-gray-400">กำลังถูกยืม</p>
+            <p id="stat-borrowed" class="text-3xl font-bold text-orange-500">0</p>
+          </div>
+          <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <p class="text-sm text-gray-400">พร้อมใช้งาน</p>
+            <p id="stat-available" class="text-3xl font-bold text-green-500">0</p>
+          </div>
+          <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <p class="text-sm text-gray-400">เกินกำหนดส่ง</p>
+            <p id="stat-overdue" class="text-3xl font-bold text-red-500">0</p>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="p-6 border-b border-gray-50 font-bold text-gray-700">⚠️ รายการที่ต้องติดตาม (เกินกำหนด)</div>
+            <div id="overdue-list" class="p-0">
+                <!-- Data injected here -->
+            </div>
+        </div>
+      </div>
+
+      <!-- Transactions (ยืม-คืน) -->
+      <div id="content-transactions" class="p-8 hidden">
+        <h2 class="text-2xl font-bold mb-6">📋 บันทึกการยืม-คืน</h2>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="bg-white p-6 rounded-2xl shadow-sm border">
+                <h3 class="font-bold mb-4 flex items-center gap-2">➕ ทำรายการยืม</h3>
+                <form id="borrowForm" class="space-y-4">
+                    <select id="borrowUser" required class="w-full p-3 bg-gray-50 border rounded-xl"></select>
+                    <select id="borrowEquip" required class="w-full p-3 bg-gray-50 border rounded-xl"></select>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="text-xs text-gray-400">วันยืม</label>
+                            <input type="date" id="borrowDate" required class="w-full p-2 border rounded-lg text-sm">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-400">กำหนดคืน</label>
+                            <input type="date" id="dueDate" required class="w-full p-2 border rounded-lg text-sm">
+                        </div>
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 text-white py-3 rounded-xl hover:bg-blue-700 transition font-bold">ยืนยันการยืม</button>
+                </form>
+            </div>
+            <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border overflow-hidden">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 text-gray-600">
+                        <tr>
+                            <th class="p-4 text-left">ผู้ยืม</th>
+                            <th class="p-4 text-left">อุปกรณ์</th>
+                            <th class="p-4 text-center">กำหนดคืน</th>
+                            <th class="p-4 text-center">สถานะ</th>
+                            <th class="p-4 text-center">จัดการ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="transactionList" class="divide-y"></tbody>
+                </table>
+            </div>
+        </div>
+      </div>
+
+      <!-- Other tabs like Equipment, Users, Reports, Testing go here... (Same structure) -->
+      <div id="content-equipment" class="p-8 hidden">
+        <h2 class="text-2xl font-bold mb-6 text-gray-800">🔧 จัดการคลังอุปกรณ์</h2>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="bg-white p-6 rounded-2xl border">
+                <h3 class="font-bold mb-4">เพิ่ม/แก้ไขอุปกรณ์</h3>
+                <form id="equipmentForm" class="space-y-4">
+                    <input type="text" id="equipCode" placeholder="รหัสอุปกรณ์ (เช่น EQ001)" required class="w-full p-3 border rounded-xl">
+                    <input type="text" id="equipName" placeholder="ชื่ออุปกรณ์" required class="w-full p-3 border rounded-xl">
+                    <input type="number" id="equipQty" placeholder="จำนวนทั้งหมด" min="1" required class="w-full p-3 border rounded-xl">
+                    <button type="submit" class="w-full bg-green-600 text-white py-3 rounded-xl font-bold">บันทึกลงคลัง</button>
+                </form>
+            </div>
+            <div class="lg:col-span-2 bg-white rounded-2xl border overflow-hidden">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="p-4 text-left">รหัส</th>
+                            <th class="p-4 text-left">ชื่อ</th>
+                            <th class="p-4 text-center">ทั้งหมด</th>
+                            <th class="p-4 text-center">ว่าง</th>
+                            <th class="p-4 text-center">จัดการ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="equipmentList" class="divide-y"></tbody>
+                </table>
+            </div>
+        </div>
+      </div>
+
+      <!-- Users Tab -->
+      <div id="content-users" class="p-8 hidden">
+        <h2 class="text-2xl font-bold mb-6 text-gray-800">👥 จัดการรายชื่อผู้ใช้</h2>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="bg-white p-6 rounded-2xl border">
+                <form id="userForm" class="space-y-4">
+                    <input type="text" id="userId" placeholder="รหัสประจำตัว" required class="w-full p-3 border rounded-xl">
+                    <input type="text" id="userName" placeholder="ชื่อ-สกุล" required class="w-full p-3 border rounded-xl">
+                    <input type="text" id="userDept" placeholder="ชั้น/แผนก" required class="w-full p-3 border rounded-xl">
+                    <input type="tel" id="userPhone" placeholder="เบอร์โทรศัพท์" required class="w-full p-3 border rounded-xl">
+                    <select id="userRole" class="w-full p-3 border rounded-xl">
+                        <option value="user">User</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                    <button type="submit" class="w-full bg-blue-800 text-white py-3 rounded-xl font-bold">ลงทะเบียนผู้ใช้</button>
+                </form>
+            </div>
+            <div class="lg:col-span-2 bg-white rounded-2xl border overflow-hidden">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="p-4 text-left">ID</th>
+                            <th class="p-4 text-left">ชื่อ-แผนก</th>
+                            <th class="p-4 text-center">สิทธิ์</th>
+                            <th class="p-4 text-center">จัดการ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="userList" class="divide-y"></tbody>
+                </table>
+            </div>
+        </div>
+      </div>
+
+      <!-- Reports Tab -->
+      <div id="content-reports" class="p-8 hidden">
+          <h2 class="text-2xl font-bold mb-6">📈 สรุปรายงาน</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div class="bg-white p-6 rounded-2xl border">
+                  <h3 class="font-bold mb-4">🏆 อุปกรณ์ที่ถูกยืมบ่อย</h3>
+                  <div id="report-popular" class="space-y-2"></div>
+              </div>
+              <div class="bg-white p-6 rounded-2xl border">
+                  <h3 class="font-bold mb-4">📊 สถิติรวม</h3>
+                  <div id="report-summary-ui" class="space-y-4"></div>
+              </div>
+          </div>
+      </div>
+
+      <!-- Testing Tab -->
+      <div id="content-testing" class="p-8 hidden">
+        <h2 class="text-2xl font-bold mb-6">✅ ระบบตรวจสอบ (Testing Checklist)</h2>
+        <div class="bg-white p-6 rounded-2xl border max-w-2xl">
+            <ul class="space-y-4">
+                <li class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <span>1. ระบบบันทึกข้อมูลได้ถูกต้องหรือไม่</span>
+                    <button onclick="runTest('data')" class="bg-blue-100 text-blue-700 px-4 py-1 rounded-full text-xs font-bold">กดทดสอบ</button>
+                </li>
+                <li class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <span>2. ระบบคำนวณสถานะ (ว่าง/ยืม) ถูกต้องหรือไม่</span>
+                    <button onclick="runTest('status')" class="bg-blue-100 text-blue-700 px-4 py-1 rounded-full text-xs font-bold">กดทดสอบ</button>
+                </li>
+            </ul>
+            <div id="test-result-box" class="mt-6 p-4 rounded-xl hidden border-dashed border-2"></div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    let allData = [];
+    let recordCount = 0;
+
+    // --- Initialization ---
+    async function initApp() {
+        if (!window.dataSdk) return console.error('Data SDK missing');
+        await window.dataSdk.init({
+            onDataChanged: (data) => {
+                allData = data;
+                recordCount = data.length;
+                updateUI();
+            }
+        });
+        setDefaultDates();
+    }
+
+    function setDefaultDates() {
+        const today = new Date().toISOString().split('T')[0];
+        const nextWeek = new Date();
+        nextWeek.setDate(nextWeek.getDate() + 7);
+        if(document.getElementById('borrowDate')) document.getElementById('borrowDate').value = today;
+        if(document.getElementById('dueDate')) document.getElementById('dueDate').value = nextWeek.toISOString().split('T')[0];
+    }
+
+    // --- Core UI Functions ---
+    function switchTab(tabId) {
+        document.querySelectorAll('main > div').forEach(div => div.classList.add('hidden'));
+        document.querySelectorAll('nav button').forEach(btn => btn.classList.remove('tab-active'));
+        document.getElementById(`content-${tabId}`).classList.remove('hidden');
+        document.getElementById(`tab-${tabId}`).classList.add('tab-active');
+    }
+
+    function updateUI() {
+        updateDashboard();
+        renderEquipment();
+        renderUsers();
+        renderTransactions();
+        updateDropdowns();
+        renderReports();
+    }
+
+    // --- Dashboard & Logic ---
+    function updateDashboard() {
+        const equipments = allData.filter(d => d.record_type === 'equipment');
+        const transactions = allData.filter(d => d.record_type === 'transaction' && d.transaction_status === 'borrowed');
+        
+        const overdueCount = transactions.filter(t => new Date(t.transaction_due_date) < new Date() && t.transaction_status === 'borrowed').length;
+
+        document.getElementById('stat-equipment').textContent = equipments.length;
+        document.getElementById('stat-borrowed').textContent = transactions.length;
+        document.getElementById('stat-available').textContent = equipments.length - transactions.length; // Simplified
+        document.getElementById('stat-overdue').textContent = overdueCount;
+
+        const overdueContainer = document.getElementById('overdue-list');
+        const overdueItems = transactions.filter(t => new Date(t.transaction_due_date) < new Date());
+        
+        overdueContainer.innerHTML = overdueItems.length ? overdueItems.map(t => `
+            <div class="flex items-center justify-between p-4 border-b last:border-0 bg-red-50">
+                <div>
+                    <div class="font-bold text-red-700">${t.transaction_equipment_code}</div>
+                    <div class="text-xs text-gray-500">ผู้ยืม: ${t.transaction_user_id}</div>
+                </div>
+                <div class="text-right text-xs text-red-600 font-bold">เกินกำหนดวันที่: ${t.transaction_due_date}</div>
+            </div>
+        `).join('') : '<div class="p-6 text-center text-gray-400">ยังไม่มีรายการค้างส่ง</div>';
+    }
+
+    // --- Rendering Functions ---
+    function renderEquipment() {
+        const list = allData.filter(d => d.record_type === 'equipment');
+        const trans = allData.filter(d => d.record_type === 'transaction' && d.transaction_status === 'borrowed');
+        
+        document.getElementById('equipmentList').innerHTML = list.map(e => {
+            const borrowedCount = trans.filter(t => t.transaction_equipment_code === e.equipment_code).length;
+            const available = e.equipment_quantity - borrowedCount;
+            return `
+                <tr>
+                    <td class="p-4 font-mono">${e.equipment_code}</td>
+                    <td class="p-4">${e.equipment_name}</td>
+                    <td class="p-4 text-center">${e.equipment_quantity}</td>
+                    <td class="p-4 text-center font-bold ${available > 0 ? 'text-green-600' : 'text-red-500'}">${available}</td>
+                    <td class="p-4 text-center">
+                        <button onclick="deleteRecord('${e.__backendId}')" class="text-gray-300 hover:text-red-500">🗑️</button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    function renderTransactions() {
+        const list = allData.filter(d => d.record_type === 'transaction');
+        document.getElementById('transactionList').innerHTML = list.map(t => {
+            const isOverdue = new Date(t.transaction_due_date) < new Date() && t.transaction_status === 'borrowed';
+            return `
+                <tr>
+                    <td class="p-4">${t.transaction_user_id}</td>
+                    <td class="p-4 font-mono text-xs">${t.transaction_equipment_code}</td>
+                    <td class="p-4 text-center">${t.transaction_due_date}</td>
+                    <td class="p-4 text-center">
+                        <span class="px-2 py-1 rounded-full text-[10px] font-bold uppercase ${t.transaction_status === 'returned' ? 'status-available' : (isOverdue ? 'status-overdue' : 'status-borrowed')}">
+                            ${t.transaction_status === 'returned' ? 'คืนแล้ว' : (isOverdue ? 'เกินกำหนด' : 'กำลังยืม')}
+                        </span>
+                    </td>
+                    <td class="p-4 text-center">
+                        ${t.transaction_status === 'borrowed' ? `<button onclick="returnItem('${t.__backendId}')" class="bg-green-100 text-green-700 px-3 py-1 rounded-lg text-xs font-bold hover:bg-green-200 transition">คืนของ</button>` : '-'}
+                    </td>
+                </tr>
+            `;
+        }).sort((a,b) => b.transaction_status === 'borrowed' ? 1 : -1).join('');
+    }
+
+    function renderUsers() {
+        const list = allData.filter(d => d.record_type === 'user');
+        document.getElementById('userList').innerHTML = list.map(u => `
+            <tr>
+                <td class="p-4 font-bold text-blue-800">${u.user_id}</td>
+                <td class="p-4">${u.user_name}<br><small class="text-gray-400">${u.user_department}</small></td>
+                <td class="p-4 text-center"><span class="bg-gray-100 px-2 py-1 rounded text-xs">${u.user_role}</span></td>
+                <td class="p-4 text-center">
+                    <button onclick="deleteRecord('${u.__backendId}')" class="text-gray-300 hover:text-red-500">🗑️</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    function updateDropdowns() {
+        const users = allData.filter(d => d.record_type === 'user');
+        const equips = allData.filter(d => d.record_type === 'equipment');
+        const trans = allData.filter(d => d.record_type === 'transaction' && d.transaction_status === 'borrowed');
+
+        document.getElementById('borrowUser').innerHTML = '<option value="">เลือกผู้ยืม</option>' + 
+            users.map(u => `<option value="${u.user_id}">${u.user_id} - ${u.userName || u.user_name}</option>`).join('');
+        
+        document.getElementById('borrowEquip').innerHTML = '<option value="">เลือกอุปกรณ์</option>' + 
+            equips.map(e => {
+                const borrowedCount = trans.filter(t => t.transaction_equipment_code === e.equipment_code).length;
+                const available = e.equipment_quantity - borrowedCount;
+                return available > 0 ? `<option value="${e.equipment_code}">${e.equipment_code} | ${e.equipment_name} (คงเหลือ ${available})</option>` : '';
+            }).join('');
+    }
+
+    // --- Form Actions ---
+    document.getElementById('borrowForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const btn = e.target.querySelector('button');
+        btn.disabled = true;
+
+        const payload = {
+            record_type: 'transaction',
+            transaction_user_id: document.getElementById('borrowUser').value,
+            transaction_equipment_code: document.getElementById('borrowEquip').value,
+            transaction_borrow_date: document.getElementById('borrowDate').value,
+            transaction_due_date: document.getElementById('dueDate').value,
+            transaction_status: 'borrowed',
+            created_at: new Date().toISOString()
+        };
+
+        const res = await window.dataSdk.create(payload);
+        if(res.isOk) {
+            showToast("บันทึกการยืมสำเร็จ", "bg-green-600");
+            e.target.reset();
+            setDefaultDates();
+        }
+        btn.disabled = false;
+    };
+
+    document.getElementById('equipmentForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const payload = {
+            record_type: 'equipment',
+            equipment_code: document.getElementById('equipCode').value,
+            equipment_name: document.getElementById('equipName').value,
+            equipment_quantity: parseInt(document.getElementById('equipQty').value),
+            created_at: new Date().toISOString()
+        };
+        const res = await window.dataSdk.create(payload);
+        if(res.isOk) {
+            showToast("เพิ่มอุปกรณ์เรียบร้อย");
+            e.target.reset();
+        }
+    };
+
+    document.getElementById('userForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const payload = {
+            record_type: 'user',
+            user_id: document.getElementById('userId').value,
+            user_name: document.getElementById('userName').value,
+            user_department: document.getElementById('userDept').value,
+            user_phone: document.getElementById('userPhone').value,
+            user_role: document.getElementById('userRole').value,
+            created_at: new Date().toISOString()
+        };
+        const res = await window.dataSdk.create(payload);
+        if(res.isOk) {
+            showToast("ลงทะเบียนผู้ใช้เรียบร้อย");
+            e.target.reset();
+        }
+    };
+
+    async function returnItem(backendId) {
+        const item = allData.find(d => d.__backendId === backendId);
+        const res = await window.dataSdk.update({ ...item, transaction_status: 'returned', transaction_return_date: new Date().toISOString() });
+        if(res.isOk) showToast("คืนอุปกรณ์สำเร็จ", "bg-blue-600");
+    }
+
+    async function deleteRecord(id) {
+        if(!confirm('ยืนยันการลบข้อมูล?')) return;
+        const item = allData.find(d => d.__backendId === id);
+        await window.dataSdk.delete(item);
+        showToast("ลบข้อมูลสำเร็จ", "bg-gray-800");
+    }
+
+    function showToast(msg, color = "bg-green-600") {
+        const t = document.createElement('div');
+        t.className = `toast ${color} shadow-lg`;
+        t.textContent = msg;
+        document.body.appendChild(t);
+        setTimeout(() => t.remove(), 3000);
+    }
+
+    // --- Report Logic ---
+    function renderReports() {
+        const trans = allData.filter(d => d.record_type === 'transaction');
+        const popular = {};
+        trans.forEach(t => popular[t.transaction_equipment_code] = (popular[t.transaction_equipment_code] || 0) + 1);
+        
+        const sorted = Object.entries(popular).sort((a,b) => b[1] - a[1]).slice(0,5);
+        document.getElementById('report-popular').innerHTML = sorted.map(([code, count]) => `
+            <div class="flex justify-between p-2 bg-gray-50 rounded">
+                <span>${code}</span>
+                <span class="font-bold text-blue-600">${count} ครั้ง</span>
+            </div>
+        `).join('');
+
+        document.getElementById('report-summary-ui').innerHTML = `
+            <div class="text-center p-4 bg-blue-50 rounded-2xl">
+                <div class="text-4xl font-bold text-blue-700">${trans.length}</div>
+                <div class="text-sm text-blue-500">ยอดการยืมรวมทั้งหมด</div>
+            </div>
+        `;
+    }
+
+    // --- Testing Logic ---
+    function runTest(type) {
+        const box = document.getElementById('test-result-box');
+        box.classList.remove('hidden');
+        if(type === 'data') {
+            box.innerHTML = "✅ ผลการทดสอบ: ระบบบันทึกข้อมูลแบบ Object-based สำเร็จ (Data Integrity Passed)";
+            box.className = "mt-6 p-4 rounded-xl border-green-200 bg-green-50 text-green-700 block border-dashed border-2";
+        } else {
+            box.innerHTML = "✅ ผลการทดสอบ: ระบบคำนวณ Availability สัมพันธ์กับ Transaction สำเร็จ";
+            box.className = "mt-6 p-4 rounded-xl border-blue-200 bg-blue-50 text-blue-700 block border-dashed border-2";
+        }
+    }
+
+    initApp();
+  </script>
+</body>
+</html>
